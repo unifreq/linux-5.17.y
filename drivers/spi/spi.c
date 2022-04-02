@@ -3431,6 +3431,7 @@ int spi_setup(struct spi_device *spi)
 {
 	unsigned	bad_bits, ugly_bits;
 	int		status;
+	int		ret;
 
 	/*
 	 * Check mode to prevent that any two of DUAL, QUAD and NO_MOSI/MISO
@@ -3501,6 +3502,19 @@ int spi_setup(struct spi_device *spi)
 			dev_err(&spi->controller->dev, "Failed to setup device: %d\n",
 				status);
 			return status;
+		}
+	}
+
+	if (gpio_is_valid(spi->cs_gpio)) {
+		dev_info(&spi->dev, "spi_setup / gpio_is_valid(%d) ... doing gpio_request ...\n", spi->cs_gpio);
+		ret = gpio_request(spi->cs_gpio, dev_name(&spi->dev));
+		if (ret) {
+			dev_err(&spi->dev, "failed to request gpio\n");
+		}
+		else {
+			gpio_direction_output(spi->cs_gpio,
+				 !(spi->mode & SPI_CS_HIGH));
+			dev_info(&spi->dev, "spi_setup / gpio_direction_output(%d) done !\n", spi->cs_gpio);
 		}
 	}
 
