@@ -8,12 +8,12 @@
 #include "meson-g12a.dtsi"
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/gpio/meson-g12a-gpio.h>
-#include <dt-bindings/leds/common.h>
 #include <dt-bindings/sound/meson-g12a-tohdmitx.h>
 
 / {
 	compatible = "amediatech,x96-max", "amlogic,g12a";
-	model = "Shenzhen Amediatech Technology Co., Ltd X96 Max";
+	//model = "Shenzhen Amediatech Technology Co., Ltd X96 Max";
+	model = "AMedia X96 Max";
 
 	aliases {
 		serial0 = &uart_AO;
@@ -30,9 +30,10 @@
 	chosen {
 		stdout-path = "serial0:115200n8";
 	};
+
 	memory@0 {
 		device_type = "memory";
-		reg = <0x0 0x0 0x0 0x40000000>;
+		reg = <0x0 0x0 0x0 0x80000000>;
 	};
 
 	cvbs-connector {
@@ -149,6 +150,16 @@
 		regulator-always-on;
 	};
 
+        vddgpu: regulator-vddgpu {
+                compatible = "regulator-fixed";
+                regulator-name = "mali";
+                regulator-min-microvolt = <800000>;
+                regulator-max-microvolt = <800000>;
+                vin-supply = <&dc_in>;
+                regulator-boot-on;
+                regulator-always-on;
+        };
+
 	sound {
 		compatible = "amlogic,axg-sound-card";
 		model = "X96-MAX";
@@ -229,69 +240,17 @@
 		};
 	};
 
-	spi {
-		compatible = "spi-gpio";
-		sck-gpios = <&gpio GPIOX_0 GPIO_ACTIVE_HIGH>;
-		mosi-gpios = <&gpio GPIOA_15 GPIO_ACTIVE_HIGH>;
-		cs-gpios = <&gpio_ao GPIOAO_10 GPIO_ACTIVE_LOW>;
-		num-chipselects = <1>;
-		#address-cells = <1>;
-		#size-cells = <0>;
-
-		tm1628: led-controller@0 {
-			compatible = "titanmec,tm1628";
-			reg = <0>;
-			spi-3wire;
-			spi-lsb-first;
-			spi-rx-delay-us = <1>;
-			spi-max-frequency = <500000>;
-			#address-cells = <2>;
-			#size-cells = <0>;
-
-			segment-mapping = /bits/ 8 <4 5 6 1 2 3 7>;
-			grid = /bits/ 8 <3 4 5 1>;
-
-			apps@2,1 {
-				reg = <2 1>;
-				function = "apps";
-			};
-
-			usb@5,2 {
-				reg = <2 2>;
-				function = LED_FUNCTION_USB;
-			};
-			setup@2,3 {
-				reg = <2 3>;
-				function = "setup";
-			};
-
-			card@2,4 {
-				reg = <2 4>;
-				function = LED_FUNCTION_SD;
-			};
-
-			colon@2,5 {
-				reg = <2 5>;
-				function = "colon";
-			};
-
-			hdmi@2,6 {
-				reg = <2 6>;
-				function = "hdmi";
-			};
-
-			cvbs@2,7 {
-				reg = < 7>;
-				function = "cvbs";
-			};
-		};
-	};
-
 	wifi32k: wifi32k {
 		compatible = "pwm-clock";
 		#clock-cells = <0>;
 		clock-frequency = <32768>;
 		pwms = <&pwm_ef 0 30518 0>; /* PWM_E at 32.768KHz */
+	};
+
+	openvfd {
+		compatible = "open,vfd";
+		dev_name = "openvfd";
+		status = "okay";
 	};
 };
 
@@ -343,6 +302,10 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	clocks = <&clkc CLKID_CPU_CLK>;
 	clock-latency = <50000>;
+};
+
+&mali {
+	mali-supply=<&vddgpu>;
 };
 
 &cvbs_vdac_port {
@@ -414,7 +377,18 @@
 	status = "okay";
 	phy-mode = "rgmii";
 	phy-handle = <&external_phy>;
+
 	amlogic,tx-delay-ns = <2>;
+
+	snps,aal;
+	snps,rxpbl = <0x8>;
+	snps,txpbl = <0x8>;
+
+	rx-fifo-depth = <4096>;
+	tx-fifo-depth = <4096>;
+
+	nvmem-cells = <&eth_mac>;
+	nvmem-cell-names = "eth_mac";
 };
 
 &pwm_ef {
@@ -491,7 +465,7 @@
 
 	bus-width = <4>;
 	cap-sd-highspeed;
-	max-frequency = <100000000>;
+	max-frequency = <50000000>;
 	disable-wp;
 
 	cd-gpios = <&gpio GPIOC_6 GPIO_ACTIVE_LOW>;
@@ -508,7 +482,9 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	max-frequency = <100000000>;
+	mmc-ddr-1_8v;
+	mmc-hs200-1_8v;
+	max-frequency = <200000000>;
 	non-removable;
 	disable-wp;
 
@@ -537,4 +513,29 @@
 
 &tohdmitx {
 	status = "okay";
+};
+
+&cpu_opp_table {
+        opp-1908000000 {
+                opp-hz = /bits/ 64 <1908000000>;
+                opp-microvolt = <1021000>;
+        };
+};
+
+&efuse {
+        eth_mac: eth_mac@0 {
+                reg = <0x0 0x06>;
+        };
+
+        bt_mac: bt_mac@6 {
+                reg = <0x6 0x06>;
+        };
+
+        wifi_mac: wifi_mac@12 {
+                reg = <0x0c 0x06>;
+        };
+
+        usid: usid@18 {
+                reg = <0x12 0x10>;
+        };
 };
