@@ -5,6 +5,9 @@
  */
 
 #include "smb_common.h"
+#ifdef CONFIG_SMB_INSECURE_SERVER
+#include "smb1pdu.h"
+#endif
 #include "server.h"
 #include "misc.h"
 #include "smbstatus.h"
@@ -22,6 +25,12 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
 #define PERIOD '.'
 #define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
+#define KSMBD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
+#else
+#define KSMBD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
+#endif
+
 struct smb_protocol {
 	int		index;
 	char		*name;
@@ -30,12 +39,20 @@ struct smb_protocol {
 };
 
 static struct smb_protocol smb1_protos[] = {
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	{
-		SMB21_PROT,
-		"\2SMB 2.1",
-		"SMB2_10",
-		SMB21_PROT_ID
+		SMB1_PROT,
+		"\2NT LM 0.12",
+		"NT1",
+		SMB10_PROT_ID
 	},
+	{
+		SMB2_PROT,
+		"\2SMB 2.002",
+		"SMB2_02",
+		SMB20_PROT_ID
+	},
+#endif
 	{
 		SMB2X_PROT,
 		"\2SMB 2.???",
@@ -45,6 +62,12 @@ static struct smb_protocol smb1_protos[] = {
 };
 
 static struct smb_protocol smb2_protos[] = {
+	{
+		SMB2_PROT,
+		"\2SMB 2.002",
+		"SMB2_02",
+		SMB20_PROT_ID
+	},
 	{
 		SMB21_PROT,
 		"\2SMB 2.1",
@@ -88,7 +111,11 @@ unsigned int ksmbd_server_side_copy_max_total_size(void)
 
 inline int ksmbd_min_protocol(void)
 {
-	return SMB21_PROT;
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	return SMB1_PROT;
+#else
+	return SMB2_PROT;
+#endif
 }
 
 inline int ksmbd_max_protocol(void)
@@ -128,11 +155,20 @@ int ksmbd_lookup_protocol_idx(char *str)
  *
  * check for valid smb signature and packet direction(request/response)
  *
- * Return:      0 on success, otherwise -EINVAL
+ * Return:      0 on success, otherwise error
  */
 int ksmbd_verify_smb_message(struct ksmbd_work *work)
 {
 	struct smb2_hdr *smb2_hdr = ksmbd_req_buf_next(work);
+
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
+		ksmbd_debug(SMB, "got SMB2 command\n");
+		return ksmbd_smb2_check_message(work);
+	}
+
+	return ksmbd_smb1_check_message(work);
+#else
 	struct smb_hdr *hdr;
 
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER)
@@ -144,6 +180,7 @@ int ksmbd_verify_smb_message(struct ksmbd_work *work)
 		return 0;
 
 	return -EINVAL;
+#endif
 }
 
 /**
@@ -279,18 +316,36 @@ err_out:
 	return BAD_PROT_ID;
 }
 
+#define SMB_COM_NEGOTIATE	0x72
 int ksmbd_init_smb_server(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	void *buf = work->request_buf;
+	__le32 proto;
+#endif
 
 	if (conn->need_neg == false)
 		return 0;
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+	if (proto == SMB1_PROTO_NUMBER)
+		init_smb1_server(conn);
+	else
+		init_smb3_11_server(conn);
+#else
 	init_smb3_11_server(conn);
+#endif
 
 	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
 		conn->need_neg = false;
 	return 0;
+}
+
+bool ksmbd_pdu_size_has_room(unsigned int pdu)
+{
+	return (pdu >= KSMBD_MIN_SUPPORTED_HEADER_SIZE - 4);
 }
 
 int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
@@ -430,10 +485,11 @@ int ksmbd_extract_shortname(struct ksmbd_conn *conn, const char *longname,
 
 static int __smb2_negotiate(struct ksmbd_conn *conn)
 {
-	return (conn->dialect >= SMB21_PROT_ID &&
+	return (conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID);
 }
 
+#ifndef CONFIG_SMB_INSECURE_SERVER
 static int smb_handle_negotiate(struct ksmbd_work *work)
 {
 	struct smb_negotiate_rsp *neg_rsp = work->response_buf;
@@ -442,6 +498,7 @@ static int smb_handle_negotiate(struct ksmbd_work *work)
 	neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;
 	return -EINVAL;
 }
+#endif
 
 int ksmbd_smb_negotiate_common(struct ksmbd_work *work, unsigned int command)
 {
@@ -461,7 +518,7 @@ int ksmbd_smb_negotiate_common(struct ksmbd_work *work, unsigned int command)
 		}
 	}
 
-	if (command == SMB2_NEGOTIATE_HE && __smb2_negotiate(conn)) {
+	if (command == SMB2_NEGOTIATE_HE) {
 		ret = smb2_handle_negotiate(work);
 		init_smb2_neg_rsp(work);
 		return ret;

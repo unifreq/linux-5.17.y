@@ -216,8 +216,8 @@ struct smb_direct_rdma_rw_msg {
 
 static inline int get_buf_page_count(void *buf, int size)
 {
-	return DIV_ROUND_UP((uintptr_t)buf + size, PAGE_SIZE) -
-		(uintptr_t)buf / PAGE_SIZE;
+	return (int)(DIV_ROUND_UP((uintptr_t)buf + size, PAGE_SIZE) -
+		     (uintptr_t)buf / PAGE_SIZE);
 }
 
 static void smb_direct_destroy_pools(struct smb_direct_transport *transport);
@@ -1337,6 +1337,7 @@ static void read_write_done(struct ib_cq *cq, struct ib_wc *wc,
 	rdma_rw_ctx_destroy(&msg->rw_ctx, t->qp, t->qp->port,
 			    msg->sg_list, msg->sgt.nents, dir);
 	sg_free_table_chained(&msg->sgt, SG_CHUNK_SIZE);
+
 	complete(msg->completion);
 	kfree(msg);
 }

@@ -10,6 +10,9 @@
 
 #include "server.h"
 #include "smb_common.h"
+#ifdef CONFIG_SMB_INSECURE_SERVER
+#include "smb1pdu.h"
+#endif
 #include "mgmt/ksmbd_ida.h"
 #include "connection.h"
 #include "transport_tcp.h"
@@ -103,11 +106,24 @@ void ksmbd_conn_enqueue_request(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	struct smb2_hdr *hdr = work->request_buf;
 
+	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
+		if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
+			requests_queue = &conn->requests;
+			work->syncronous = true;
+		}
+	} else {
+		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
+			requests_queue = &conn->requests;
+	}
+#else
 	if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 		requests_queue = &conn->requests;
 		work->syncronous = true;
 	}
+#endif
 
 	if (requests_queue) {
 		atomic_inc(&conn->req_running);
@@ -298,14 +314,15 @@ int ksmbd_conn_handler_loop(void *p)
 		pdu_size = get_rfc1002_len(hdr_buf);
 		ksmbd_debug(CONN, "RFC1002 header %u bytes\n", pdu_size);
 
-		/*
-		 * Check if pdu size is valid (min : smb header size,
-		 * max : 0x00FFFFFF).
-		 */
-		if (pdu_size < __SMB2_HEADER_STRUCTURE_SIZE ||
-		    pdu_size > MAX_STREAM_PROT_LEN) {
+		/* make sure we have enough to get to SMB header end */
+		if (!ksmbd_pdu_size_has_room(pdu_size)) {
+			ksmbd_debug(CONN, "SMB request too short (%u bytes)\n",
+				    pdu_size);
 			continue;
 		}
+
+		if (pdu_size > MAX_STREAM_PROT_LEN)
+                        continue;
 
 		/* 4 for rfc1002 length field */
 		size = pdu_size + 4;
