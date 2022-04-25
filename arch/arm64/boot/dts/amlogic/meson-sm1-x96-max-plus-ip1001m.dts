@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2019 BayLibre SAS. All rights reserved.
+ * Copyright (c) 2020 Christian Hewitt <christianshewitt@gmail.com>
+ * Copyright (c) 2022 flippy <uniqfreq@gmail.com>
+ */
+
+/dts-v1/;
+
+#include "meson-sm1-x96-max-plus.dts"
+
+&ethmac {
+	phy-mode = "rgmii";
+	/delete-property/ rx-internal-delay-ps;
+	//rx-internal-delay-ps = <800>;
+	amlogic,tx-delay-ns = <2>;
+};
+
+&ext_mdio {
+	/delete-node/ ethernet-phy@0;
+
+	external_phy: ethernet-phy@3 {
+		/* ICPlus IP1001M */
+		reg = <3>;
+		max-speed = <1000>;
+
+		reset-assert-us = <10000>;
+		reset-deassert-us = <80000>;
+		reset-gpios = <&gpio GPIOZ_15 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
+
+		interrupt-parent = <&gpio_intc>;
+		/* MAC_INTR on GPIOZ_14 */
+		interrupts = <26 IRQ_TYPE_LEVEL_LOW>;
+	};
+};
