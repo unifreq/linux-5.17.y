@@ -7,13 +7,14 @@
 
 /dts-v1/;
 
-#include "meson-sm1-x96-max-plus.dts"
+#include "meson-sm1-x96-max-plus-oc.dts"
 
 &ethmac {
-	phy-mode = "rgmii";
-	/delete-property/ rx-internal-delay-ps;
-	//rx-internal-delay-ps = <800>;
-	amlogic,tx-delay-ns = <2>;
+	phy-mode = "rgmii-txid";
+	/* After a simple testing, temporarily set rx-internal-delay-ps to 2800 ps, 
+	 * if anyone finds a more suitable value please let me know.
+	 */
+	rx-internal-delay-ps = <2800>;
 };
 
 &ext_mdio {
